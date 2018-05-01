@@ -2,17 +2,18 @@
 __author__ = 'huangyf'
 
 import torch
-from torch.autograd import Variable
 import torch.nn.functional as F
 from torch import nn, optim
 import numpy as np
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class DDPG(object):
     def __init__(self, a_dim, s_dim, a_bound, lr_a, lr_c, gama, tau, memory_size, batch_size):
         self.a_dim = a_dim
         self.s_dim = s_dim
-        self.a_bound = self.to_var(a_bound)
+        self.a_bound = self.to_tensor(a_bound)
         self.lr_a = lr_a
         self.lr_c = lr_c
         self.gama = gama
@@ -22,18 +23,18 @@ class DDPG(object):
 
         self.memory = [0 for i in range(memory_size)]
 
-        self.a_eval = ActorNet(self.a_dim, self.s_dim, self.a_bound).cuda()
-        self.a_target = ActorNet(self.a_dim, self.s_dim, self.a_bound).cuda()
+        self.a_eval = Actor_net(self.a_dim, self.s_dim, self.a_bound).cuda()
+        self.a_target = Actor_net(self.a_dim, self.s_dim, self.a_bound).cuda()
 
-        self.c_eval = CriticNet(self.a_dim, self.s_dim).cuda()
-        self.c_target = CriticNet(self.a_dim, self.s_dim).cuda()
+        self.c_eval = Critic_net(self.a_dim, self.s_dim).cuda()
+        self.c_target = Critic_net(self.a_dim, self.s_dim).cuda()
 
         for ap, cp in zip(self.a_target.parameters(), self.c_target.parameters()):
             ap.requires_grad = False
             cp.requires_grad = False
 
     def choose_action(self, s):
-        s = Variable(torch.from_numpy(s).float()).cuda().unsqueeze(0)
+        s = torch.from_numpy(s).float().unsqueeze(0).to(device)
         action = self.a_eval.forward(s).cpu().data[0].numpy().tolist()
         return action
 
@@ -55,7 +56,7 @@ class DDPG(object):
         batch_idx = np.random.choice(min(self.memory_counter, self.memory_size), self.batch_size)
         memory_batch = [self.memory[i] for i in batch_idx]
         s, a, r, s_ = list(zip(*memory_batch))
-        s, a, r, s_ = self.to_var(s), self.to_var(a), self.to_var(r), self.to_var(s_)
+        s, a, r, s_ = self.to_tensor(s), self.to_tensor(a), self.to_tensor(r), self.to_tensor(s_)
 
         action_eval = self.a_eval.forward(s)
         action_target = self.a_target.forward(s_)
@@ -78,13 +79,13 @@ class DDPG(object):
         a_loss.backward()
         a_optimizer.step()
 
-    def to_var(self, x_list):
-        return Variable(torch.from_numpy(np.stack(x_list)).float()).cuda()
+    def to_tensor(self, x_list):
+        return torch.from_numpy(np.stack(x_list)).float().to(device)
 
 
-class ActorNet(nn.Module):
+class Actor_net(nn.Module):
     def __init__(self, a_dim, s_dim, a_bound):
-        super(ActorNet, self).__init__()
+        super(Actor_net, self).__init__()
         self.a_dim = a_dim
         self.s_dim = s_dim
         self.a_bound = a_bound
@@ -100,9 +101,9 @@ class ActorNet(nn.Module):
         return out
 
 
-class CriticNet(nn.Module):
+class Critic_net(nn.Module):
     def __init__(self, a_dim, s_dim):
-        super(CriticNet, self).__init__()
+        super(Critic_net, self).__init__()
         self.a_dim = a_dim
         self.s_dim = s_dim
 
